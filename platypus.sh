@@ -1,5 +1,5 @@
 #!/bin/bash
-#$ -cwd 
+#$ -cwd
 
 
 ##########################################################################
@@ -8,23 +8,23 @@
 # Platypus on all bams in the 'parentdir'                                #
 #                                                                        #
 # The number of bams run in parallel is specified by 'numJobs'           #
-# Input to stdin: $1 = number of processes                               #                                                                    
-# Change lines 18-24 to fit your file structures                         #                                                                    
-#                                                                        #                                                                    
-# !! Make sure there is only 1 '*.bam' file per sample, if more than one #                                                                    
-#    then change first for loop to find -name '*your.bam'                # 
+# Input to stdin: $1 = number of processes                               #
+# Change lines 18-24 to fit your file structures                         #
+#                                                                        #
+# !! Make sure there is only 1 '*.bam' file per sample, if more than one #
+#    then change first for loop to find -name '*your.bam'                #
 ##########################################################################
 
-parentdir="/scratch/jakutagawa/RNA-seq/GTEx_bams/STAR_aligned/subset-SRA"
+parentdir="/scratch/jakutagawa/icgc/bams/normal/DO46933"
 #parentdir="/scratch/jakutagawa/RNA-seq/realigned_bams/tumor"
 #parentdir="/scratch/jakutagawa/RNA-seq/realigned_bams/normal"
-hs37="/pod/pstore/groups/brookslab/reference_indices/hs37/hs37d5.fa"
-hg19="/pod/pstore/groups/brookslab/reference_indices/hg19/hg19.fa"
-outDir="/scratch/amak/varCalls/Platypus/gtex_normals"
-opossum="/pod/pstore/groups/brookslab/amak/packages/Opossum/Opossum.py"
-platypus="/pod/pstore/groups/brookslab/amak/packages/Platypus/bin/Platypus.py"
+hs37="/private/groups/brookslab/reference_indices/hs37/hs37d5.fa"
+hg19="/private/groups/brookslab/reference_indices/hg19/hg19.fa"
+outDir="/scratch/jakutagawa/icgc/var_calls"
+opossum="/private/groups/brookslab/jakutagawa/variant_calling/packages/Opossum/Opossum.py"
+platypus="/private/groups/brookslab/jakutagawa/variant_calling/packages/Platypus/bin/Platypus.py"
 #Specify here the number of concurrent jobs
-maxProcesses=$1
+maxProcesses=$4
 if [ $(($maxProcesses)) -eq 0 ]; then
     echo "Max number of processes not supplied. Defaulting to 2"
     maxProcesses=2
