@@ -3,7 +3,7 @@
 
 
 ##########################################################################
-# Allysia Mak and Jon Akutagawa                                          #
+# Jon Akutagawa                                                          #
 # platypus.sh runs Opposum for read preprocessing before running         #
 # Platypus on all bams in the 'parentdir'                                #
 #                                                                        #
@@ -22,8 +22,11 @@ normal_dir="/scratch/jakutagawa/icgc/bams/normal"
 hs37="/private/groups/brookslab/reference_indices/hs37/hs37d5.fa"
 hg19="/private/groups/brookslab/reference_indices/hg19/hg19.fa"
 outDir="/scratch/jakutagawa/icgc/var_calls/platypus"
+pon="/scratch/jakutagawa/icgc/bams/gtex/pon/pon.vcf.gz"
 opossum="/private/groups/brookslab/jakutagawa/variant_calling/packages/Opossum/Opossum.py"
 platypus="/private/groups/brookslab/jakutagawa/variant_calling/packages/Platypus/bin/Platypus.py"
+gatk="/private/groups/brookslab/jakutagawa/tools/gatk-4.0.11.0/gatk"
+vardict="/private/groups/brookslab/jakutagawa/variant_calling/packages/VarDictJava/build/install/VarDict/bin/VarDict"
 
 #Specify here the number of concurrent jobs
 maxProcesses=$1
@@ -43,17 +46,15 @@ fi
 
 # Comment out if .opossum bams have already been made
 for bam in $(find $synthetic_dir -mindepth 1 -name '*.sorted.bam'); do
-    base_filename=$(basename $bam)
-    echo $base_filename
-    matching_normal=$normal_dir/"${base_filename%.with_variants.sorted.bam}".bam
-    echo $matching_normal
+    uid=$(basename $bam)
+    echo $uid
     IFS='.'
-    set $base_filename
+    set $uid
     uid=$(echo $2)
     echo $uid
     unset IFS
     bamdir=$(dirname $bam)
-    #matching_normal=$(find $normal_dir -mindepth 1 -name '*'$uid'.STAR.v1.bam')
+    matching_normal=$(find $normal_dir -mindepth 1 -name '*'$uid'.STAR.v1.bam')
 
     #if [ ! -d $outDir/$uid ];
     #then
@@ -62,61 +63,89 @@ for bam in $(find $synthetic_dir -mindepth 1 -name '*.sorted.bam'); do
     #fi
 
     echo $bam
+
+################# platypus section
     opossum_spiked_file="${bam%.*}".opossum.bam
     opossum_normal_file="${matching_normal%.*}".opossum.bam
     #echo $opossum_spiked_file
 
     if [ ! -f $opossum_spiked_file ]; then
-    echo "Opossum running on" $bam
+    echo "Opossum running on" $opossum_spiked_file
     #if [[ $uid == *"tophat"* ]]; then
     #    maxJobs; nice time python $opossum --BamFile=$bam --SoftClipsExist=False --OutFile=$bamdir'/'$uid'.opossum.bam' &
         #nice time python $opossum --BamFile=$bam --SoftClipsExist=False --OutFile=$opossum_spiked_file &
     #else
     #    maxJobs; nice time python $opossum --BamFile=$bam --SoftClipsExist=True --OutFile=$bamdir'/'$uid'.opossum.bam' &
-    #nice time python $opossum --BamFile=$bam --SoftClipsExist=True --OutFile=$opossum_spiked_file
+    nice time python $opossum --BamFile=$bam --SoftClipsExist=True --OutFile=$opossum_spiked_file
     #fi
     #echo $bamdir'/'$uid'.opossum.bam'
     else
-    echo 'opossum already completed on spiked '$uid
-    echo $opossum_spiked_file
+    echo 'spiked '$uid 'already done'
     fi
 
     if [ ! -f $opossum_normal_file ]; then
-    echo "Opossum running on" $matching_normal
+    echo "Opossum running on" $opossum_normal_file
     #if [[ $uid == *"tophat"* ]]; then
     #    maxJobs; nice time python $opossum --BamFile=$bam --SoftClipsExist=False --OutFile=$bamdir'/'$uid'.opossum.bam' &
         #nice time python $opossum --BamFile=$bam --SoftClipsExist=False --OutFile=$opossum_spiked_file &
     #else
     #    maxJobs; nice time python $opossum --BamFile=$bam --SoftClipsExist=True --OutFile=$bamdir'/'$uid'.opossum.bam' &
-    #nice time python $opossum --BamFile=$matching_normal --SoftClipsExist=True --OutFile=$opossum_normal_file
+    nice time python $opossum --BamFile=$bam --SoftClipsExist=True --OutFile=$opossum_normal_file
     #fi
     #echo $bamdir'/'$uid'.opossum.bam'
     else
-    echo 'opossum already completed on normal' $uid
-    echo $matching_normal
-    echo $opossum_normal_file
+    echo 'normal' $uid 'already done'
     fi
 
     platypus_spiked_file=$outDir'/'$uid'.spiked.vcf'
     platypus_normal_file=$outDir'/'$uid'.normal.vcf'
 
     if [ ! -f $platypus_spiked_file ]; then
-        echo "Platypus running on" $opossum_spiked_file
-        nice time python $platypus callVariants --bamFiles $opossum_spiked_file --refFile $hs37 --filterDuplicates 0 --minMapQual 0 --minFlank 0 --maxReadLength 500 --minGoodQualBases 10 --minBaseQual 20 -o $platypus_spiked_file
-        echo $platypus_spiked_file" completed"
+        echo "Platypus running on" $bam
+        #nice time python $platypus callVariants --bamFiles $bam --refFile $hs37 --filterDuplicates 0 --minMapQual 0 --minFlank 0 --maxReadLength 500 --minGoodQualBases 10 --minBaseQual 20 -o $platypus_spiked_file
     else
-        echo $uid 'spiked file already completed'
+        echo $uid 'spiked file completed'
     fi
 
     if [ ! -f $platypus_normal_file ]; then
-        echo "Platypus running on" $opossum_normal_file
-        nice time python $platypus callVariants --bamFiles $opossum_normal_file --refFile $hs37 --filterDuplicates 0 --minMapQual 0 --minFlank 0 --maxReadLength 500 --minGoodQualBases 10 --minBaseQual 20 -o $platypus_normal_file
-        echo $platypus_normal_file" completed"
+        echo "Platypus running on" $bam
+        #nice time python $platypus callVariants --bamFiles $matching_normal --refFile $hs37 --filterDuplicates 0 --minMapQual 0 --minFlank 0 --maxReadLength 500 --minGoodQualBases 10 --minBaseQual 20 -o $platypus_normal_file
     else
-        echo $uid 'normal file already completed'
+        echo $uid 'normal file completed'
     fi
 
+################# mutect section
 
+split_bam="${bam%.*}".split.bam
+
+#SplitNCigarReads
+if [ ! -f $split_bam ];
+then
+    nice time $gatk SplitNCigarReads \
+    -R $hs37 \
+    -I $bam \
+    -O $split_bam
+fi
+
+split_normal_bam="${matching_normal%.*}".split.bam
+
+if [ ! -f $split_normal_bam ];
+then
+    nice time $gatk SplitNCigarReads \
+    -R $hs37 \
+    -I $bam \
+    -O $split_normal_bam
+fi
+
+mutect_vcf=
+mutect_normal_vcf=
+
+$gatk Mutect2 \
+-R $hs37 \
+-I $split_bam \
+-tumor d7bbc19b-5690-47fc-94ef-25dbade69a47 \
+-pon $pon \
+-O /scratch/jakutagawa/icgc/var_calls/mutect2/103c3f0e-d87e-4ae5-9727-d385c372c022.mutant.vcf
 done
 
 
@@ -145,4 +174,4 @@ done
 
 #    echo $uid "complete"
     #fi
-#done
+done
