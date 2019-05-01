@@ -14,7 +14,7 @@ output:
 scatter plot for sensitivity and PPV
 histograms for depth and vaf of detected mutations
 
-python compare_synthetic2.py -pl /scratch/jakutagawa/icgc/var_calls/platypus/ \
+python calculate_sensitivity_ppv.py -pl /scratch/jakutagawa/icgc/var_calls/platypus/ \
  -vd /scratch/jakutagawa/icgc/var_calls/vardict/ \
  -mt /scratch/jakutagawa/icgc/var_calls/mutect2/ \
  -ml /private/groups/brookslab/jakutagawa/variant_calling/synthetic_mutation_lists/ \
@@ -73,7 +73,7 @@ def load_mutation_list (mutation_list_filename):
     #print (get_coverage(bam_filename,mut_entry))
 
     #print (mutations_list[0])
-    sys.stderr.write('finished loading ' + mutation_list_filename + '\n')
+    sys.stderr.write('loaded ' + mutation_list_filename + '\n')
     return mutations_dict
 
 def load_pon (pon_filename):
@@ -97,7 +97,7 @@ def load_pon (pon_filename):
 
         #print (mutect_depths)
         #print (dict_test)
-        sys.stderr.write('finished loading ' + pon_filename + '\n')
+        sys.stderr.write('loaded ' + pon_filename + '\n')
         return pon_list
     else:
         sys.stderr.write('no pon specified\n')
@@ -111,7 +111,7 @@ def load_vcf (vcf_filename):
     counter = 0
     mutations_list = list()
     file_origin = get_file_origin(vcf_filename)
-    #print (mutect_depths)
+    #print ('yoooo')
 
     for chrom,pos1,ref_base,var_base in read_vcf(vcf_filename,file_origin):
         counter += 1
@@ -126,7 +126,7 @@ def load_vcf (vcf_filename):
 
     #print (mutect_depths)
     #print (dict_test)
-    sys.stderr.write('finished loading ' + vcf_filename + '\n')
+    sys.stderr.write('loaded ' + vcf_filename + '\n')
     return mutations_list
 
 def get_file_origin(vcf_file):
@@ -150,6 +150,7 @@ def read_vcf (vcf_filename,file_origin):
 
     with open(vcf_filename) as fileH:
         # read the header
+        print (vcf_filename)
         header_counter = 0
         while True:
             line = fileH.readline()
@@ -178,8 +179,8 @@ def read_vcf (vcf_filename,file_origin):
                 for info_type in split_info:
                     if info_type.split('=')[0] == 'DP':
                         depth = info_type.split('=')[1]
-                        mutect_depths[(chrom,pos1,var_base)] = depth
-                        dict_test[1] = 'yo'
+                        #mutect_depths[(chrom,pos1,var_base)] = depth
+                        #dict_test[1] = 'yo'
                         #print (depth)
                     if info_type.split('=')[0] == 'TLOD':
                         tlod = float(info_type.split('=')[1].split(',')[0])
@@ -191,9 +192,10 @@ def read_vcf (vcf_filename,file_origin):
 
 
             if not line.startswith('&'):
+                #print ('will yield')
                 yield chrom,pos1,ref_base,var_base
 
-#sys.stderr.write('finished loading ' + str(counter) + ' mutations \n')
+#sys.stderr.write('loaded ' + str(counter) + ' mutations \n')
 def gather_synthetic_mutation_lists (list_folder):
     """
     Read in all synthetic mutation lists from folder using os.walk
@@ -215,16 +217,17 @@ def gather_vcfs (vcf_folder, caller_name):
     vcf_lists = list()
     for root, dirs, files in os.walk(vcf_folder):
         for name in files:
-            if caller_name == 'platypus':
-                if 'normal' in name or 'spiked' in name:
-                    #print (name)
-                    vcf_lists.append((os.path.join(root,name)))
-            elif caller_name == 'vardict':
-                if '.out.vcf' in name:
-                    vcf_lists.append((os.path.join(root,name)))
-            elif caller_name == 'mutect':
-                if ('mutant' or 'normal' in name) and ('idx' not in name) and ('5c149622-df1c-427d-9bf0-fef9a4631b2f' not in name):
-                    vcf_lists.append((os.path.join(root,name)))
+            if name.endswith('.vcf'):
+                if caller_name == 'platypus':
+                    if 'normal' in name or 'spiked' in name:
+                        #print (name)
+                        vcf_lists.append((os.path.join(root,name)))
+                elif caller_name == 'vardict':
+                    if '.out.vcf' in name:
+                        vcf_lists.append((os.path.join(root,name)))
+                elif caller_name == 'mutect':
+                    if ('mutant' or 'normal' in name) and ('idx' not in name) and ('5c149622-df1c-427d-9bf0-fef9a4631b2f' not in name):
+                        vcf_lists.append((os.path.join(root,name)))
 
     return vcf_lists
 
@@ -249,6 +252,8 @@ def load_all_vcfs (file_list, variant_caller):
     normal_vcf_dict = dict()
     complete_vcf_trio = list()
 
+    print ('yo')
+    print (file_list)
     vcf_lists = p.map(load_vcf, file_list)
 
     for index, file in enumerate(file_list):
@@ -288,9 +293,72 @@ def read_mutation_list (mutation_list_filename):
 
             yield chrom,pos1,pos2,vaf,mut_base,mut_type
 
-def print_comparison_list (caller_variant_map):
-    all_mutations = list(set(sum(caller_variant_map.values())))
-    print (len(all_mutations))
+def calculate_consensus_union_metrics (id_vcf_map):
+    combined_sensitivity = list()
+    combined_ppv = list()
+    combined_origins = list()
+
+    for id, call_dict in id_vcf_map.items():
+        if len(call_dict) == 3:
+            consensus_true_positives = set(call_dict['platypus'][0])
+            consensus_false_positives = set(call_dict['platypus'][1])
+            consensus_false_negatives = set(call_dict['platypus'][2])
+            union_true_positives = list()
+            union_false_positives = list()
+            union_false_negatives = list()
+            for caller, calls in call_dict.items():
+                new_consensus_true_positives = consensus_true_positives & set(call_dict[caller][0])
+                new_consensus_false_positives = consensus_false_positives & set(call_dict[caller][1])
+                new_consensus_false_negatives = consensus_false_negatives & set(call_dict[caller][2])
+                consensus_true_positives = new_consensus_true_positives
+                consensus_false_positives = new_consensus_false_positives
+                consensus_false_negatives = new_consensus_false_negatives
+                union_true_positives += call_dict[caller][0]
+                union_false_positives += call_dict[caller][1]
+                union_false_negatives += call_dict[caller][2]
+        if 'platypus' in call_dict.keys() and 'mutect' in call_dict.keys():
+            new_consensus_true_positives = set(call_dict['platypus'][0]) & set(call_dict['mutect'][0])
+            new_consensus_false_positives = set(call_dict['platypus'][1]) & set(call_dict['mutect'][1])
+            new_consensus_false_negatives = set(call_dict['platypus'][2]) & set(call_dict['mutect'][2])
+            consensus_sensitivity = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives))+len(set(new_consensus_false_negatives)))
+            consensus_ppv = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives)) + len(set(new_consensus_false_positives)))
+            combined_sensitivity.append(consensus_sensitivity)
+            combined_ppv.append(consensus_ppv)
+            combined_origins.append('platypus_mutect')
+        if 'mutect' in call_dict.keys() and 'vardict' in call_dict.keys():
+            new_consensus_true_positives = set(call_dict['mutect'][0]) & set(call_dict['vardict'][0])
+            new_consensus_false_positives = set(call_dict['mutect'][1]) & set(call_dict['vardict'][1])
+            new_consensus_false_negatives = set(call_dict['mutect'][2]) & set(call_dict['vardict'][2])
+            consensus_sensitivity = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives))+len(set(new_consensus_false_negatives)))
+            consensus_ppv = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives)) + len(set(new_consensus_false_positives)))
+            combined_sensitivity.append(consensus_sensitivity)
+            combined_ppv.append(consensus_ppv)
+            combined_origins.append('mutect_vardict')
+        if 'platypus' in call_dict.keys() and 'vardict' in call_dict.keys():
+            new_consensus_true_positives = set(call_dict['platypus'][0]) & set(call_dict['vardict'][0])
+            new_consensus_false_positives = set(call_dict['platypus'][1]) & set(call_dict['vardict'][1])
+            new_consensus_false_negatives = set(call_dict['platypus'][2]) & set(call_dict['vardict'][2])
+            consensus_sensitivity = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives))+len(set(new_consensus_false_negatives)))
+            consensus_ppv = float(len(set(new_consensus_true_positives))) / float(len(set(new_consensus_true_positives)) + len(set(new_consensus_false_positives)))
+            combined_sensitivity.append(consensus_sensitivity)
+            combined_ppv.append(consensus_ppv)
+            combined_origins.append('platypus_vardict')
+
+        consensus_sensitivity = float(len(set(consensus_true_positives))) / float(len(set(consensus_true_positives))+len(set(consensus_false_negatives)))
+        consensus_ppv = float(len(set(consensus_true_positives))) / float(len(set(consensus_true_positives)) + len(set(consensus_false_positives)))
+        combined_sensitivity.append(consensus_sensitivity)
+        combined_ppv.append(consensus_ppv)
+        combined_origins.append('consensus')
+        union_sensitivity = float(len(set(union_true_positives))) / float(len(set(union_true_positives))+len(set(union_false_negatives)))
+        union_ppv = float(len(set(union_true_positives))) / float(len(set(union_true_positives)) + len(set(union_false_positives)))
+        combined_sensitivity.append(union_sensitivity)
+        combined_ppv.append(union_ppv)
+        combined_origins.append('union')
+
+    return combined_sensitivity, combined_ppv, combined_origins
+
+
+
 
 def calculate_sensitivity_ppv (vardict_vcfs, platypus_vcfs, mutect_vcfs, cleaned_mutation_dict, pon_list):
     """
@@ -304,6 +372,7 @@ def calculate_sensitivity_ppv (vardict_vcfs, platypus_vcfs, mutect_vcfs, cleaned
     id_list = vardict_vcfs[0].keys()
     vcf_caller_name_map = {'vardict':vardict_vcfs,'platypus':platypus_vcfs,'mutect':mutect_vcfs}
     caller_variant_map = {'vardict':[],'platypus':[],'mutect':[]}
+    id_vcf_map = dict()
 
     for caller, vcfs in vcf_caller_name_map.items():
         for id in id_list:
@@ -363,6 +432,13 @@ def calculate_sensitivity_ppv (vardict_vcfs, platypus_vcfs, mutect_vcfs, cleaned
                     print (len(filtered_possible_positives))
                     print (len(filtered_true_positives))
                     print (len(filtered_false_positives))
+
+                try:
+                    id_vcf_map[id][caller] = [filtered_true_positives, filtered_false_positives, false_negatives]
+                except KeyError:
+                    id_vcf_map[id] = {caller:[filtered_true_positives, filtered_false_positives, false_negatives]}
+
+                print (id)
             except KeyError:
                 pass
 
@@ -441,7 +517,10 @@ def calculate_sensitivity_ppv (vardict_vcfs, platypus_vcfs, mutect_vcfs, cleaned
         #vaf_depth_histograms (spiked_mutation_dict, true_positives, false_negatives, false_positives, file_origin, bam_filename)
         """
 
-    print_comparison_list (caller_variant_map)
+    combined_sensitivity, combined_ppv, combined_file_origins = calculate_consensus_union_metrics (id_vcf_map)
+    sensitivity_list += combined_sensitivity
+    ppv_list += combined_ppv
+    file_origins += combined_file_origins
     plot_sensitivity_ppv(sensitivity_list, ppv_list, file_origins)
 
 
@@ -532,27 +611,40 @@ def plot_sensitivity_ppv (sensitivity_list, ppv_list, file_origins):
     print (sensitivity_list)
     print (ppv_list)
     print (file_origins)
-
+    palette = ['red','blue','green','#ff6666','#66ff66','#ffff00','#ff0066','#9933ff','#ff8000','#000000']
+    labels = ['vardict_filter','platypus_filter','mutect_filter','vardict',
+              'platypus','mutect','platypus_mutect','mutect_vardict', 'platypus_vardict',
+              'union','consensus']
     colors = list()
     for origin in file_origins:
-        if origin == 'vardict_filter':
-            colors.append('red')
-        elif origin == 'platypus_filter':
-            colors.append('blue')
-        elif origin == 'mutect_filter':
-            colors.append('green')
-        elif origin == 'vardict':
-            colors.append('#ff6666')
-        elif origin == 'platypus':
-            colors.append('#6666ff')
-        elif origin == 'mutect':
-            colors.append('#66ff66')
+        if origin == labels[0]:
+            colors.append(palette[0])
+        elif origin == labels[1]:
+            colors.append(palette[1])
+        elif origin == labels[2]:
+            colors.append(palette[2])
+        elif origin == labels[3]:
+            colors.append(palette[3])
+        elif origin == labels[4]:
+            colors.append(palette[4])
+        elif origin == labels[5]:
+            colors.append(palette[5])
+        elif origin == labels[6]:
+            colors.append(palette[6])
+        elif origin == labels[7]:
+            colors.append(palette[7])
+        elif origin == labels[8]:
+            colors.append(palette[8])
+        elif origin == labels[9]:
+            colors.append(palette[9])
+        elif origin == labels[10]:
+            colors.append(palette[10])
 
-    print (colors)
-    print (sensitivity_list[34:43])
-    print (ppv_list[34:43])
-    print (file_origins[34:43])
-    print (colors[34:43])
+    #print (colors)
+    #print (sensitivity_list[34:43])
+    #print (ppv_list[34:43])
+    #print (file_origins[34:43])
+    #print (colors[34:43])
 
 
     panel1.scatter(sensitivity_list, ppv_list, alpha = 0.5, c = colors, label = file_origins)
@@ -572,13 +664,24 @@ def plot_sensitivity_ppv (sensitivity_list, ppv_list, file_origins):
     panel1.set_xticklabels(ticks)
     panel1.set_yticklabels(ticks)
 
+    legend_dots = list()
+    for color in palette:
+        legend_dots.append(Line2D([0], [0], marker='o', color='w', alpha = 0.5,
+                              markerfacecolor=color, markersize=4))
+    """
     custom_dots = [Line2D([0], [0], marker='o', color='w', alpha = 0.5,
                           markerfacecolor='r', markersize=5),
                    Line2D([0], [0], marker='o', color='w', alpha = 0.5,
                    markerfacecolor='b', markersize=5),
                    Line2D([0], [0], marker='o', color='w', alpha = 0.5,
-                   markerfacecolor='g', markersize=5)]
-    panel1.legend(custom_dots,['vardict', 'platypus','mutect'],loc='lower left', fontsize = 'x-small')
+                   markerfacecolor='g', markersize=5),
+                   Line2D([0], [0], marker='o', color='w', alpha = 0.5,
+                   markerfacecolor='#ff8000', markersize=5),
+                   Line2D([0], [0], marker='o', color='w', alpha = 0.5,
+                   markerfacecolor='#000000', markersize=5)]
+    """
+    panel1.legend(legend_dots,labels,loc='lower left', fontsize = 'x-small', fancybox=True, framealpha=0.5)
+    
     plt.savefig('sensitivity_vs_ppv.pdf')
 
 def clean_mutation_list (all_mutations_dict, reference_fasta):
@@ -756,9 +859,11 @@ def main(my_command_line=None):
     #print (synthetic_mutation_lists)
     #print (spiked_mutation_dict)
     cleaned_mutation_dict = clean_mutation_list(spiked_mutation_dict, reference_fasta)
-    print (cleaned_mutation_dict.keys())
+    #print (cleaned_mutation_dict.keys())
+
     if platypus_folder:
         platypus_vcf_list = gather_vcfs(platypus_folder, 'platypus')
+        #print (platypus_vcf_list)
         platypus_vcfs = load_all_vcfs(platypus_vcf_list, 'platypus')
         #print (platypus_vcf_list)
     if vardict_folder:
@@ -777,6 +882,7 @@ def main(my_command_line=None):
     if mutect_folder:
         mutect_vcf_list = gather_vcfs(mutect_folder, 'mutect')
         mutect_vcfs = load_all_vcfs(mutect_vcf_list, 'mutect')
+
 
 
     #print (mutect_vcfs[0]['PCAWG'])
